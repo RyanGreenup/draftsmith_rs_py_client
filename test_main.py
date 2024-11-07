@@ -505,6 +505,187 @@ def test_create_task():
         pytest.fail(f"Failed to create task: {str(e)}")
 
 
+def test_update_asset():
+    """Test updating an asset's metadata"""
+    try:
+        # First create a test asset
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tf:
+            tf.write(b"Test asset for updating")
+            temp_path = tf.name
+
+        try:
+            # Upload test asset
+            created_asset = upload_asset(temp_path)
+
+            # Create update request
+            update_request = UpdateAssetRequest(
+                note_id=1, description="Updated description for the asset"
+            )
+
+            # Update the asset
+            updated_asset = update_asset(created_asset.id, update_request)
+
+            # Verify the response
+            assert isinstance(updated_asset, Asset)
+            assert updated_asset.id == created_asset.id
+            assert updated_asset.note_id == 1
+            assert updated_asset.description == "Updated description for the asset"
+            assert updated_asset.location == created_asset.location
+            assert updated_asset.created_at is not None
+
+        finally:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to update asset: {str(e)}")
+
+
+def test_delete_asset():
+    """Test deleting an asset through the API endpoint"""
+    try:
+        # First create a test asset to delete
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tf:
+            tf.write(b"Test asset for deletion")
+            temp_path = tf.name
+
+        try:
+            # Upload test asset
+            created_asset = upload_asset(temp_path)
+
+            # Delete the asset
+            delete_asset(created_asset.id)
+
+            # Verify the asset was deleted by trying to get it
+            with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+                # Try to download the deleted asset, should fail with 404
+                download_path = os.path.join(tempfile.gettempdir(), "deleted_asset.txt")
+                download_asset(created_asset.id, download_path)
+            assert exc_info.value.response.status_code == 404
+
+        finally:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to delete asset: {str(e)}")
+
+
+def test_download_asset_by_filename():
+    """Test downloading an asset by filename"""
+    try:
+        # Create output path for downloaded file
+        download_path = os.path.join(tempfile.gettempdir(), "downloaded_icon.png")
+
+        try:
+            # Download the asset by filename
+            download_asset("icon.png", download_path)
+
+            # Verify the file was downloaded
+            assert os.path.exists(download_path)
+            assert os.path.getsize(download_path) > 0
+
+        finally:
+            # Clean up downloaded file
+            if os.path.exists(download_path):
+                os.unlink(download_path)
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to download asset by filename: {str(e)}")
+
+
+def test_get_all_assets():
+    """Test retrieving all assets"""
+    try:
+        # First create a test asset to ensure we have at least one
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tf:
+            tf.write(b"Test asset for listing")
+            temp_path = tf.name
+
+        try:
+            # Upload test asset
+            created_asset = upload_asset(temp_path)
+
+            # Get all assets
+            assets = get_all_assets()
+
+            # Verify we got a list of Asset objects
+            assert isinstance(assets, list)
+            assert len(assets) > 0
+            assert all(isinstance(asset, Asset) for asset in assets)
+
+            # Find our test asset in the list
+            test_asset = next(
+                (asset for asset in assets if asset.id == created_asset.id), None
+            )
+            assert test_asset is not None
+            assert test_asset.location.startswith("uploads/")
+            assert test_asset.created_at is not None
+
+        finally:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to retrieve assets: {str(e)}")
+
+
+def test_upload_asset():
+    """Test uploading a file as an asset"""
+    try:
+        # Create a temporary test file
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tf:
+            tf.write(b"Test content")
+            temp_path = tf.name
+
+        try:
+            # Upload the file
+            result = upload_asset(temp_path)
+
+            # Verify the response structure
+            assert isinstance(result, Asset)
+            assert result.id > 0
+            assert result.location.startswith("uploads/")
+            assert result.created_at is not None
+            assert result.note_id is None
+            assert result.description is None
+
+        finally:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to upload asset: {str(e)}")
+
+
+def test_search_notes():
+    """Test searching notes using full-text search"""
+    try:
+        # Search for notes containing 'feature'
+        results = search_notes("feature")
+
+        # Verify we got a list of Note objects
+        assert isinstance(results, list)
+        assert all(isinstance(note, Note) for note in results)
+
+        # Verify each note has the required fields
+        for note in results:
+            assert note.id > 0
+            assert isinstance(note.title, str)
+            assert isinstance(note.content, str)
+            assert note.created_at is not None
+            assert note.modified_at is not None
+
+            # Verify the note contains our search term
+            assert "feature" in note.content.lower()
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to search notes: {str(e)}")
+
+
 def test_get_notes_tree():
     """Test retrieving notes in tree structure"""
     try:

@@ -1,11 +1,14 @@
-from typing import Optional
+from typing import Optional, BinaryIO
 from datetime import datetime, date
+from pathlib import Path
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel
 import requests
 import json
+import tempfile
+import os
 
 
 class CreateNoteRequest(BaseModel):
@@ -82,6 +85,19 @@ class TreeNote(BaseModel):
     hierarchy_type: Optional[str] = None
     children: list["TreeNote"] = []
     tags: list[TreeTag] = []
+
+
+class UpdateAssetRequest(BaseModel):
+    note_id: Optional[int] = None
+    description: Optional[str] = None
+
+
+class Asset(BaseModel):
+    id: int
+    note_id: Optional[int]
+    location: str
+    description: Optional[str]
+    created_at: datetime
 
 
 class TreeTagWithNotes(BaseModel):
@@ -874,6 +890,160 @@ def get_tasks_tree(base_url: str = "http://localhost:37240") -> list[TreeTask]:
 
     response.raise_for_status()
     return [TreeTask.model_validate(task) for task in response.json()]
+
+
+def upload_asset(
+    file_path: str | Path | BinaryIO, base_url: str = "http://localhost:37240"
+) -> Asset:
+    """
+    Upload a file as an asset
+
+    Args:
+        file_path: Path to the file to upload or file-like object
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        Asset: The created asset data
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        FileNotFoundError: If the file path does not exist
+    """
+    if isinstance(file_path, (str, Path)):
+        with open(file_path, "rb") as f:
+            files = {"file": f}
+            response = requests.post(f"{base_url}/assets", files=files)
+    else:
+        # Handle file-like object
+        files = {"file": file_path}
+        response = requests.post(f"{base_url}/assets", files=files)
+
+    response.raise_for_status()
+    return Asset.model_validate(response.json())
+
+
+def get_all_assets(base_url: str = "http://localhost:37240") -> list[Asset]:
+    """
+    Get all assets
+
+    Args:
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        list[Asset]: List of all assets
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    response = requests.get(
+        f"{base_url}/assets",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return [Asset.model_validate(asset) for asset in response.json()]
+
+
+def update_asset(
+    asset_id: int, request: UpdateAssetRequest, base_url: str = "http://localhost:37240"
+) -> Asset:
+    """
+    Update an asset's metadata
+
+    Args:
+        asset_id: The ID of the asset to update
+        request: The update request containing new metadata
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        Asset: The updated asset data
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        requests.exceptions.HTTPError: If the asset is not found (404)
+    """
+    response = requests.put(
+        f"{base_url}/assets/{asset_id}",
+        headers={"Content-Type": "application/json"},
+        data=request.model_dump_json(exclude_none=True),
+    )
+
+    response.raise_for_status()
+    return Asset.model_validate(response.json())
+
+
+def delete_asset(asset_id: int, base_url: str = "http://localhost:37240") -> None:
+    """
+    Delete an asset by its ID
+
+    Args:
+        asset_id: The ID of the asset to delete
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        requests.exceptions.HTTPError: If the asset is not found (404)
+    """
+    response = requests.delete(
+        f"{base_url}/assets/{asset_id}",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+
+
+def download_asset(
+    asset_id: int | str,
+    output_path: str | Path,
+    base_url: str = "http://localhost:37240",
+) -> None:
+    """
+    Download an asset by its ID or filename to a specified path
+
+    Args:
+        asset_id: The ID of the asset to download or its filename (e.g. 'icon.png')
+        output_path: Path where the downloaded file should be saved
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        requests.exceptions.HTTPError: If the asset is not found (404)
+    """
+    endpoint = (
+        f"{base_url}/assets/download/{asset_id}"
+        if isinstance(asset_id, str)
+        else f"{base_url}/assets/{asset_id}"
+    )
+    response = requests.get(endpoint, stream=True)
+    response.raise_for_status()
+
+    with open(output_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+
+def search_notes(query: str, base_url: str = "http://localhost:37240") -> list[Note]:
+    """
+    Search notes using full-text search
+
+    Args:
+        query: The search query string
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        list[Note]: List of notes matching the search query
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    response = requests.get(
+        f"{base_url}/notes/search/fts",
+        params={"q": query},
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return [Note.model_validate(note) for note in response.json()]
 
 
 def get_notes_tree(base_url: str = "http://localhost:37240") -> list[TreeNote]:
