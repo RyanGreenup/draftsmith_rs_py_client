@@ -1,4 +1,4 @@
-from typing import Optional, BinaryIO, Literal, List
+from typing import Optional, BinaryIO, Literal, List, Union
 from pydantic import BaseModel, Field
 from datetime import datetime, date
 from pathlib import Path
@@ -132,6 +132,13 @@ class RenderedNote(BaseModel):
 
     id: int
     rendered_content: str
+
+
+class RenderMarkdownRequest(BaseModel):
+    """Request to render markdown content"""
+
+    content: str
+    format: Optional[Literal["text", "html", "pdf"]] = None
 
 
 class TreeTagWithNotes(BaseModel):
@@ -1302,6 +1309,66 @@ def get_rendered_note(
 
     response.raise_for_status()
     return [RenderedNote.model_validate(note) for note in response.json()]
+
+
+def render_markdown(
+    content: str,
+    format: Optional[Literal["text", "html", "pdf"]] = None,
+    base_url: str = "http://localhost:37240",
+) -> str:
+    """Render markdown content to the specified format
+
+    Args:
+        content: The markdown content to render
+        format: Optional output format (text, html, or pdf)
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        str: The rendered content
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    request = RenderMarkdownRequest(content=content, format=format)
+
+    response = requests.post(
+        f"{base_url}/render/markdown",
+        headers={"Content-Type": "application/json"},
+        data=request.model_dump_json(exclude_none=True),
+    )
+
+    response.raise_for_status()
+    return response.text
+
+
+def render_markdown(
+    content: str,
+    format: Optional[Literal["text", "html", "pdf"]] = None,
+    base_url: str = "http://localhost:37240",
+) -> str:
+    """Render markdown content to the specified format
+
+    Args:
+        content: The markdown content to render
+        format: Optional output format (text, html, or pdf)
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        str: The rendered content
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    request = RenderMarkdownRequest(content=content, format=format)
+
+    response = requests.post(
+        f"{base_url}/render/markdown",
+        headers={"Content-Type": "application/json"},
+        data=request.model_dump_json(exclude_none=True),
+    )
+
+    response.raise_for_status()
+    return response.text
 
 
 def get_notes_tree(base_url: str = "http://localhost:37240") -> list[TreeNote]:
