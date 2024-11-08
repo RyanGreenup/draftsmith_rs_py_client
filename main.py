@@ -1,4 +1,5 @@
-from typing import Optional, BinaryIO, Literal
+from typing import Optional, BinaryIO, Literal, List
+from pydantic import BaseModel, Field
 from datetime import datetime, date
 from pathlib import Path
 from decimal import Decimal
@@ -15,8 +16,8 @@ class Note(BaseModel):
     id: int
     title: str
     content: str
-    created_at: datetime
-    modified_at: datetime
+    created_at: Optional[datetime] = None
+    modified_at: Optional[datetime] = None
 
 
 class CreateNoteRequest(BaseModel):
@@ -41,6 +42,13 @@ class BatchUpdateNotesResponse(BaseModel):
 class DeleteNoteResponse(BaseModel):
     message: str
     deleted_id: int
+
+
+class LinkEdge(BaseModel):
+    """Represents a link between two notes"""
+
+    from_: int = Field(alias="from")  # from is a Python keyword
+    to: int
 
 
 class NoteWithoutContent(BaseModel):
@@ -1150,6 +1158,75 @@ def batch_update_notes(
 
     response.raise_for_status()
     return BatchUpdateNotesResponse.model_validate(response.json())
+
+
+def get_note_backlinks(
+    note_id: int, base_url: str = "http://localhost:37240"
+) -> list[Note]:
+    """Get all notes that link to the specified note
+
+    Args:
+        note_id: The ID of the note to get backlinks for
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        list[Note]: List of notes that link to the specified note
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    response = requests.get(
+        f"{base_url}/notes/flat/{note_id}/backlinks",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return [Note.model_validate(note) for note in response.json()]
+
+
+def get_note_forward_links(
+    note_id: int, base_url: str = "http://localhost:37240"
+) -> list[Note]:
+    """Get all notes that the specified note links to
+
+    Args:
+        note_id: The ID of the note to get forward links for
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        list[Note]: List of notes that are linked to by the specified note
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    response = requests.get(
+        f"{base_url}/notes/flat/{note_id}/forward-links",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return [Note.model_validate(note) for note in response.json()]
+
+
+def get_link_edge_list(base_url: str = "http://localhost:37240") -> List[LinkEdge]:
+    """Get all link edges between notes
+
+    Args:
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        List[LinkEdge]: List of all link edges between notes
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    response = requests.get(
+        f"{base_url}/notes/flat/link-edge-list",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return [LinkEdge.model_validate(edge) for edge in response.json()]
 
 
 def get_notes_tree(base_url: str = "http://localhost:37240") -> list[TreeNote]:

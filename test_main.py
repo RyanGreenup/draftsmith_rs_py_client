@@ -574,21 +574,37 @@ def test_delete_asset():
 def test_download_asset_by_filename():
     """Test downloading an asset by filename"""
     try:
-        # Create output path for downloaded file
-        download_path = os.path.join(tempfile.gettempdir(), "downloaded_icon.png")
+        # First create a temporary test file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tf:
+            tf.write(b"Test image content")
+            temp_path = tf.name
 
         try:
-            # Download the asset by filename
-            download_asset("icon.png", download_path)
+            # Upload test asset with specific filename
+            created_asset = upload_asset(temp_path)
 
-            # Verify the file was downloaded
-            assert os.path.exists(download_path)
-            assert os.path.getsize(download_path) > 0
+            # Create output path for downloaded file
+            download_path = os.path.join(tempfile.gettempdir(), "downloaded_test.png")
+
+            try:
+                # Get filename from asset location
+                filename = os.path.basename(created_asset.location)
+
+                # Download the asset by filename
+                download_asset(filename, download_path)
+
+                # Verify the file was downloaded
+                assert os.path.exists(download_path)
+                assert os.path.getsize(download_path) > 0
+
+            finally:
+                # Clean up downloaded file
+                if os.path.exists(download_path):
+                    os.unlink(download_path)
 
         finally:
-            # Clean up downloaded file
-            if os.path.exists(download_path):
-                os.unlink(download_path)
+            # Clean up the temporary file
+            os.unlink(temp_path)
 
     except requests.exceptions.RequestException as e:
         pytest.fail(f"Failed to download asset by filename: {str(e)}")
@@ -781,6 +797,123 @@ def test_update_note():
 
     except requests.exceptions.RequestException as e:
         pytest.fail(f"Failed to update note: {str(e)}")
+
+
+def test_get_note_backlinks():
+    """Test retrieving backlinks for a note"""
+    try:
+        # First create two notes - one that links to another
+        target_note = note_create("Target Note", "This is the target note")
+        target_id = target_note["id"]
+
+        linking_note = note_create(
+            "Linking Note", f"This note links to [[{target_id}]]"
+        )
+
+        # Get backlinks for the target note
+        backlinks = get_note_backlinks(target_id)
+
+        # Verify we got a list of Note objects
+        assert isinstance(backlinks, list)
+        assert len(backlinks) > 0
+        assert all(isinstance(note, Note) for note in backlinks)
+
+        # Find our linking note in the backlinks
+        linking_note_found = next(
+            (note for note in backlinks if note.id == linking_note["id"]), None
+        )
+        assert linking_note_found is not None
+        assert f"[[{target_id}]]" in linking_note_found.content
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to get note backlinks: {str(e)}")
+
+
+def test_get_note_forward_links():
+    """Test retrieving forward links for a note"""
+    try:
+        # First create two notes - one that links to another
+        target_note = note_create("Target Note", "This is the target note")
+        target_id = target_note["id"]
+
+        linking_note = note_create(
+            "Linking Note", f"This note links to [[{target_id}]]"
+        )
+        linking_id = linking_note["id"]
+
+        # Get forward links for the linking note
+        forward_links = get_note_forward_links(linking_id)
+
+        # Verify we got a list of Note objects
+        assert isinstance(forward_links, list)
+        assert len(forward_links) > 0
+        assert all(isinstance(note, Note) for note in forward_links)
+
+        # Find our target note in the forward links
+        target_note_found = next(
+            (note for note in forward_links if note.id == target_id), None
+        )
+        assert target_note_found is not None
+        assert target_note_found.title == "Untitled"  # API sets default title
+        assert target_note_found.content == "This is the target note"
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to get note forward links: {str(e)}")
+    try:
+        # First create two notes - one that links to another
+        target_note = note_create("Target Note", "This is the target note")
+        target_id = target_note["id"]
+
+        linking_note = note_create(
+            "Linking Note", f"This note links to [[{target_id}]]"
+        )
+
+        # Get backlinks for the target note
+        backlinks = get_note_backlinks(target_id)
+
+        # Verify we got a list of Note objects
+        assert isinstance(backlinks, list)
+        assert len(backlinks) > 0
+        assert all(isinstance(note, Note) for note in backlinks)
+
+        # Find our linking note in the backlinks
+        linking_note_found = next(
+            (note for note in backlinks if note.id == linking_note["id"]), None
+        )
+        assert linking_note_found is not None
+        assert f"[[{target_id}]]" in linking_note_found.content
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to get note backlinks: {str(e)}")
+
+
+def test_get_link_edge_list():
+    """Test retrieving all link edges between notes"""
+    try:
+        # Create two notes with a link between them
+        note1 = note_create("Source Note", "This links to [[2]]")
+        note2 = note_create("Target Note", "This is the target")
+
+        # Get all link edges
+        edges = get_link_edge_list()
+
+        # Verify we got a list of LinkEdge objects
+        assert isinstance(edges, list)
+        assert all(isinstance(edge, LinkEdge) for edge in edges)
+
+        # Verify each edge has the required fields
+        for edge in edges:
+            assert isinstance(edge.from_, int)
+            assert isinstance(edge.to, int)
+
+        # Find our test edge
+        test_edge = next(
+            (edge for edge in edges if edge.from_ == note1["id"] and edge.to == 2), None
+        )
+        assert test_edge is not None
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to get link edges: {str(e)}")
 
 
 def test_get_notes_tree():
