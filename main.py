@@ -1,4 +1,4 @@
-from typing import Optional, BinaryIO
+from typing import Optional, BinaryIO, Literal
 from datetime import datetime, date
 from pathlib import Path
 from decimal import Decimal
@@ -11,17 +11,36 @@ import tempfile
 import os
 
 
-class CreateNoteRequest(BaseModel):
-    title: str
-    content: str
-
-
 class Note(BaseModel):
     id: int
     title: str
     content: str
     created_at: datetime
     modified_at: datetime
+
+
+class CreateNoteRequest(BaseModel):
+    title: str
+    content: str
+
+
+class UpdateNoteRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
+class BatchUpdateNotesRequest(BaseModel):
+    updates: list[tuple[int, UpdateNoteRequest]]
+
+
+class BatchUpdateNotesResponse(BaseModel):
+    updated: list[Note]
+    failed: list[int]
+
+
+class DeleteNoteResponse(BaseModel):
+    message: str
+    deleted_id: int
 
 
 class NoteWithoutContent(BaseModel):
@@ -1044,6 +1063,93 @@ def search_notes(query: str, base_url: str = "http://localhost:37240") -> list[N
 
     response.raise_for_status()
     return [Note.model_validate(note) for note in response.json()]
+
+
+def update_note(
+    note_id: int, request: UpdateNoteRequest, base_url: str = "http://localhost:37240"
+) -> Note:
+    """
+    Update an existing note
+
+    Args:
+        note_id: The ID of the note to update
+        request: The update request containing new note data
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        Note: The updated note data
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        requests.exceptions.HTTPError: If the note is not found (404)
+    """
+    response = requests.put(
+        f"{base_url}/notes/flat/{note_id}",
+        headers={"Content-Type": "application/json"},
+        data=request.model_dump_json(),
+    )
+
+    response.raise_for_status()
+    return Note.model_validate(response.json())
+
+
+def delete_note(
+    note_id: int, base_url: str = "http://localhost:37240"
+) -> DeleteNoteResponse:
+    """
+    Delete a note by its ID
+
+    Args:
+        note_id: The ID of the note to delete
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        DeleteNoteResponse: Response containing success message and deleted ID
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        requests.exceptions.HTTPError: If the note is not found (404)
+    """
+    response = requests.delete(
+        f"{base_url}/notes/flat/{note_id}",
+        headers={"Content-Type": "application/json"},
+    )
+
+    response.raise_for_status()
+    return DeleteNoteResponse.model_validate(response.json())
+
+
+def batch_update_notes(
+    request: BatchUpdateNotesRequest, base_url: str = "http://localhost:37240"
+) -> BatchUpdateNotesResponse:
+    """
+    Update multiple notes in a single request
+
+    Args:
+        request: The batch update request containing note IDs and their updates
+        base_url: The base URL of the API (default: http://localhost:37240)
+
+    Returns:
+        BatchUpdateNotesResponse: Contains lists of successfully updated notes and failed note IDs
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+    """
+    # Transform the updates list into the API's expected format
+    payload = {
+        "updates": [
+            [id, update.model_dump(exclude_none=True)] for id, update in request.updates
+        ]
+    }
+
+    response = requests.put(
+        f"{base_url}/notes/flat/batch",
+        headers={"Content-Type": "application/json"},
+        json=payload,
+    )
+
+    response.raise_for_status()
+    return BatchUpdateNotesResponse.model_validate(response.json())
 
 
 def get_notes_tree(base_url: str = "http://localhost:37240") -> list[TreeNote]:

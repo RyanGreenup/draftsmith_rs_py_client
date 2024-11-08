@@ -686,6 +686,103 @@ def test_search_notes():
         pytest.fail(f"Failed to search notes: {str(e)}")
 
 
+def test_delete_note():
+    """Test deleting a note through the API endpoint"""
+    try:
+        # First create a note to delete
+        created = note_create("Test Note", "Test content")
+        note_id = created["id"]
+
+        # Delete the note
+        result = delete_note(note_id)
+
+        # Verify the response structure
+        assert isinstance(result, DeleteNoteResponse)
+        assert result.deleted_id == note_id
+        assert f"Note {note_id} successfully deleted" in result.message
+
+        # Verify the note was deleted by trying to get it
+        with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+            get_note(note_id)
+        assert exc_info.value.response.status_code == 404
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to delete note: {str(e)}")
+
+
+def test_batch_update_notes():
+    """Test updating multiple notes in a single request"""
+    try:
+        # First create two notes to update
+        note1 = note_create("Test Note 1", "Original content 1")
+        note2 = note_create("Test Note 2", "Original content 2")
+
+        # Create batch update request
+        request = BatchUpdateNotesRequest(
+            updates=[
+                (
+                    note1["id"],
+                    UpdateNoteRequest(content="# Heading 1\nUpdated Content 1"),
+                ),
+                (
+                    note2["id"],
+                    UpdateNoteRequest(content="# Heading 2\nUpdated Content 2"),
+                ),
+            ]
+        )
+
+        # Perform batch update
+        result = batch_update_notes(request)
+
+        # Verify the response structure
+        assert isinstance(result, BatchUpdateNotesResponse)
+        assert len(result.updated) == 2
+        assert len(result.failed) == 0
+
+        # Verify each updated note
+        for note in result.updated:
+            assert isinstance(note, Note)
+            assert note.created_at is not None
+            assert note.modified_at is not None
+
+            if note.id == note1["id"]:
+                assert note.title == "Heading 1"  # API extracts title from content
+                assert note.content == "# Heading 1\nUpdated Content 1"
+            elif note.id == note2["id"]:
+                assert note.title == "Heading 2"
+                assert note.content == "# Heading 2\nUpdated Content 2"
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to batch update notes: {str(e)}")
+
+
+def test_update_note():
+    """Test updating a note through the API endpoint"""
+    try:
+        # First create a note to update
+        created = note_create("Test Note", "Original content")
+        note_id = created["id"]
+
+        # Create update request
+        update_request = UpdateNoteRequest(
+            title="Updated Title", content="Updated content for my note"
+        )
+
+        # Update the note
+        result = update_note(note_id, update_request)
+
+        # Verify the response structure
+        assert isinstance(result, Note)
+        assert result.id == note_id
+        assert result.title == "Untitled"  # API sets default title
+        assert result.content == "Updated content for my note"
+        assert result.created_at is not None
+        assert result.modified_at is not None
+
+    except requests.exceptions.RequestException as e:
+        pytest.fail(f"Failed to update note: {str(e)}")
+
+
 def test_get_notes_tree():
     """Test retrieving notes in tree structure"""
     try:
